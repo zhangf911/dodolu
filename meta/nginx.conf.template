@@ -1,0 +1,31 @@
+lua_package_path '{{base_dir}}/app/?.lua;{{base_dir}}/auto/route/?.lua;{{base_dir}}/auto/logger/?.lua;{{base_dir}}/ddl/?.lua;{{base_dir}}/ddl/lualibs/?.lua';
+
+server {
+        listen       80;
+        charset      utf-8 ;
+        server_name  yourhost;
+
+        lua_code_cache off ;
+    
+       	access_log off;
+
+        root /home/yourroot/tengine_root ;
+        set $template_root {{base_dir}}/template ;
+         
+        location / {
+        		# nonstandard code 444 closes the connection without sending any headers.
+                return 444 ;
+        }
+        
+        location ~* \.(js|gif|jpg|png)$ {
+                access_log        off ;
+                expires 0 ;
+        }
+
+    
+    {{dodolu_route_section}}
+
+    {{dodolu_log_section}}
+
+}
+
