@@ -1,12 +1,3 @@
---[[
-
-Description: deeplink go 
-author: wenqian.peiwq@alibaba-inc.com 
-version: 1.0
-Uri : /go/${wapurl}
-
-]]--
-
 local go = {}
 
 local _util = require "util"
