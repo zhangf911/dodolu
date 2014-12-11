@@ -29,6 +29,10 @@ local meta = {}
 -- data filled by generate_routes function and used in generate_nginx_conf function
 local route_app_file_list = {}
 
+local intent_1 = "    "
+local intent_2 = intent_1 .. intent_1 
+local intent_3 = intent_2 .. intent_1
+
 local status = {
 	loglist = {},
 	routelist = {},
@@ -81,6 +85,7 @@ function generate_routes(meta)
 	-- check file exits
 	local i = 1
 	for _,route in ipairs(meta.routes) do 
+		print(intent_1 .. "route " .. "path: " .. route.path .. " appname: " .. route.appname)
 		local route_filename = "route_auto_" .. i .. "_entry.lua"
 		-- add to route app file list
 		route_app_file_list[#route_app_file_list + 1] = route_filename 
@@ -119,6 +124,7 @@ function generate_logs(meta)
 	local log_dir = meta.base_dir .. '/auto/logger'
 	os.execute('mkdir -p ' .. log_dir)
 	for _,log in ipairs(meta.logs) do 
+		print(intent_1 .. "log " .. "name: " .. log.name .. " file: " .. log.logfile)
 		local content = code.log_all_code
 		if check_log then
 			-- generate log
@@ -227,12 +233,16 @@ function begin_codegen()
 	--meta = meta_thunk()
 	local auto_dir = dodolu_dir .. "/auto"
 	os.execute("rm -r " .. auto_dir)
+	print("output dir is " .. meta.base_dir .. '/auto')
 	if #meta.logs ~= 0 then
+		print("begin generating logs files ... ")
 		generate_logs(meta)			
 	end
 	if #meta.routes ~= 0 then
+		print("begin generating route files ... ")
 		generate_routes(meta)
 	end
+	print("begin generating nginx.conf ... ")
 	generate_nginx_conf(meta)
 end
 

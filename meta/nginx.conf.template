@@ -1,3 +1,4 @@
+lua_package_cpath '{{base_dir}}/ddl/luaclibs/?.so';
 lua_package_path '{{base_dir}}/app/?.lua;{{base_dir}}/auto/route/?.lua;{{base_dir}}/auto/logger/?.lua;{{base_dir}}/ddl/?.lua;{{base_dir}}/ddl/lualibs/?.lua';
 
 server {

@@ -52,7 +52,8 @@ end
 
 -- php favorite print_r for lua
 function util.print_r(obj) 
-local getIndent, quoteStr, wrapKey, wrapVal, isArray, dumpObj
+	local cached = {}
+	local getIndent, quoteStr, wrapKey, wrapVal, isArray, dumpObj
     getIndent = function(level)
         return string.rep("\t", level)
     end
@@ -102,6 +103,10 @@ local getIndent, quoteStr, wrapKey, wrapVal, isArray, dumpObj
 		if type(obj) ~= "table" then
 		  return wrapVal(obj)
 		end
+		if cached[obj] then
+			return "circular reference"
+		end
+		cached[obj] = true
 		level = level + 1
 		local tokens = {}
 		tokens[#tokens + 1] = "{"
@@ -164,7 +169,7 @@ function util.merge_table(table1, ...)
 		return table1 
 	end 
 	table1 = table1 or {}
-	for _,t in ipairs(args) do
+	for _,t in pairs(args) do
 		for k,v in pairs(t) do
 			table1[k] = v
 		end
