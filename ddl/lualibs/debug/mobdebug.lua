@@ -62,6 +62,38 @@ local cororesume = ngx and coroutine._resume or coroutine.resume
 local coroyield = ngx and coroutine._yield or coroutine.yield
 local corostatus = ngx and coroutine._status or coroutine.status
 
+local function fixpath(fpath) 
+	if fpath:find("/") == 1 then
+		return fpath
+	else 
+		return "./" .. fpath
+	end
+end
+
+local function sendfile_inserver(server, file) 
+	local content = {}
+	local index = 0
+	local ok, fd = pcall(io.open, fixpath(file))
+	if not ok then 
+		print("load file " .. fixpath(file) .. " failed, no such file ")
+		server:send("400 Bad Request\n")
+	else 	
+		--print("source file: " .. file)
+		for line in fd:lines() do 
+			index = index + 1
+			content[index] = line
+		end
+        server:send("200 OK " .. index .. " \n")
+		for _,v in ipairs(content) do
+			if string.byte(v, #v) ~= string.byte("\n") then
+				server:send(v .. "\n")
+			else
+				server:send(v)
+			end
+		end
+	end
+end
+
 if not setfenv then -- Lua 5.2
   -- based on http://lua-users.org/lists/lua-l/2010-06/msg00314.html
   -- this assumes f is a function
@@ -867,10 +899,17 @@ local function debugger_loop(sev, svars, sfile, sline)
 			server:send("400 Bad Request\n")
   	  end
     elseif command == "D" then
-      local _, _, _, file, line = string.find(line, "^([A-Z]+)%s+(.-)%s+(%d+)%s*$")
+      local _, _, _, file, line = string.find(line, "^([A-Z]+)%s+(.-):(%d+)%s*$")
       if file and line then
         remove_breakpoint(file, tonumber(line))
         server:send("200 OK\n")
+      else
+        server:send("400 Bad Request\n")
+      end
+	elseif command == "LIST" then
+      local _, _, _, file, line = string.find(line, "^([A-Z]+)%s+(.-):(%d+)%s*$")
+      if file and line then
+        sendfile_inserver(server, file)
       else
         server:send("400 Bad Request\n")
       end
@@ -1297,30 +1336,30 @@ end
 
 local client_current_file, client_current_line
 
-local function print_source(file, line, radius)
+local function print_source(client, file, line, radius)
 	local index = 1
 	local content = source_cache[file]
-	local function fixpath(fpath) 
-		if fpath:find("/") == 1 then
-			return fpath
-		else 
-			return "./" .. fpath
-		end
-	end
 	if not content then
-		-- read file
-		content = {}
-		local fd = io.open(fixpath(file))
-		if not fd then 
-			print("load file " .. fixpath(file) .. " failed, no such file ")
-		else 	
-			print("source file: " .. file)
-			for line in fd:lines() do 
-				content[index] = line
-				index = index + 1
-			end
-			source_cache[file] = content
+		-- read file from server
+		client:send("LIST " .. file .. ":" .. line .. "\n") 
+		local params, err = client:receive()
+		if not params then
+		  return nil, nil, "Debugger connection " .. (err or "error")
 		end
+		local done = true
+		local _, _, status, len = string.find(params, "^(%d+).-%s+(%d+)%s*$")
+		if status == "200" then
+		  content = {}
+		  len = tonumber(len)
+		  for i = len, 1, -1 do
+			local str = client:receive()
+			content[len - i + 1] = str	
+		  end	
+		else 
+			print("list command error, hehe")
+			return
+		end
+	    source_cache[file] = content
 	end
 	-- print source code, radius = 6
 	if radius == 0 then 
@@ -1328,6 +1367,7 @@ local function print_source(file, line, radius)
 		print(line .. ": " .. content[tonumber(line)])
 	else
 		local _line = line 
+		print("source file: " .. file)
 		for i,code in ipairs(content) do
 			if i == tonumber(_line) then
 				print(i .. ":>> " .. code)
@@ -1399,7 +1439,7 @@ local function handle(params, client, options)
     end
 	if command == "s" or command == "n" then
 		-- print current line
-		print_source(client_current_file, client_current_line, 0)
+		print_source(client, client_current_file, client_current_line, 0)
 		-- for watches
 		for idx,wexp in pairs(watches) do
 			exp = wexp
@@ -1530,7 +1570,7 @@ local function handle(params, client, options)
     end
   elseif command == "l" then -- list source
     --_, _, _, file, line = string.find(params, "^([a-z]+)%s+(.-)%s+(%d+)%s*$")
-	print_source(client_current_file, client_current_line, source_radius)
+	print_source(client, client_current_file, client_current_line, source_radius)
   elseif command == "undisplay" then
     local _, _, index = string.find(params, "^[a-z]+%s+(%d+)%s*$")
     if index then
@@ -1767,29 +1807,29 @@ local function handle(params, client, options)
       print(basedir)
     end
   elseif command == "help" then
-    print("b <file>:<line>|<func>    -- sets a breakpoint")
-    print("d [breakpoint]        -- removes a breakpoint")
-    print("dall                  -- removes all breakpoints")
-    print("display <exp>         -- adds a new display expression")
+    print("b <file>:<line>            -- sets a breakpoint")
+    print("d [breakpoint]             -- removes a breakpoint")
+    print("dall                       -- removes all breakpoints")
+    print("display <exp>              -- adds a new display expression")
     print("undisplay <index>          -- removes the watch expression at index")
     print("unalldisplay               -- removes all watch expressions")
-    print("r                   -- runs until next breakpoint")
-    print("s                  -- runs until next line, stepping into function calls")
-    print("n                  -- runs until next line, stepping over function calls")
-    print("finish                   -- runs until line after returning from current function")
-    print("listb                  -- lists breakpoints")
-    print("listd                  -- lists display")
-    print("l                      -- lists source")
-    print("p <exp>            -- evaluates expression on the current context and prints its value")
-    print("exec <stmt>           -- executes statement on the current context")
-    print("load <file>           -- loads a local file for debugging")
-    print("reload                -- restarts the current debugging session")
-    print("stack                 -- reports stack trace")
-    print("local                 -- reports local variables")
-    print("output stdout <d|c|r> -- capture and redirect io stream (default|copy|redirect)")
-    print("basedir [<path>]      -- sets the base path of the remote application, or shows the current one")
-    print("done                  -- stops the debugger and continues application execution")
-    print("q                  -- exits debugger and the application")
+    print("r                          -- runs until next breakpoint")
+    print("s                          -- runs until next line, stepping into function calls")
+    print("n                          -- runs until next line, stepping over function calls")
+    print("finish                     -- runs until line after returning from current function")
+    print("listb                      -- lists breakpoints")
+    print("listd                      -- lists display")
+    print("l                          -- lists source")
+    print("p <exp>                    -- evaluates expression on the current context and prints its value")
+    print("exec <stmt>                -- executes statement on the current context")
+    print("load <file>                -- loads a local file for debugging")
+    print("reload                     -- restarts the current debugging session")
+    print("stack                      -- reports stack trace")
+    print("local                      -- reports local variables")
+    print("output stdout <d|c|r>      -- capture and redirect io stream (default|copy|redirect)")
+    print("basedir [<path>]           -- sets the base path of the remote application, or shows the current one")
+    print("done                       -- stops the debugger and continues application execution")
+    print("q                          -- exits debugger and the application")
   else
     local _, _, spaces = string.find(params, "^(%s*)$")
     if not spaces then
