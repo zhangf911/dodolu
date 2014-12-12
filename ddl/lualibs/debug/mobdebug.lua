@@ -899,7 +899,7 @@ local function debugger_loop(sev, svars, sfile, sline)
 			server:send("400 Bad Request\n")
   	  end
     elseif command == "D" then
-      local _, _, _, file, line = string.find(line, "^([A-Z]+)%s+(.-):(%d+)%s*$")
+      local _, _, _, file, line = string.find(line, "^([A-Z]+)%s+(.-)%s+(%d+)%s*$")
       if file and line then
         remove_breakpoint(file, tonumber(line))
         server:send("200 OK\n")
